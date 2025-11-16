@@ -91,7 +91,25 @@ python -m src.cli --path ./example_project --format text
 This project is developed as a group assignment for our Software Engineering course. Each member contributes to analysis, design, coding, and documentation.
 
 ---
+Contributions (Alejandra)
 
+Alejandra implemented the final reporting and CLI functionality for the analyzer, including:
+	•	Reporter and Final Wiring
+	•	Developed Reporter.toText to generate human-readable reports from ScanResult.
+	•	Reports include header metadata (tool version, scanned path, timestamp), summary counts by severity (High / Medium / Low), and detailed findings with severity, rule ID, file, line number, message, and recommendation.
+	•	Integrated Reporter into AnalyzerService.format_report_text for consistent use in both CLI and Streamlit UI.
+	•	Sorted findings deterministically for stable and verifiable outputs.
+	•	Command-Line Interface (cli.py)
+	•	Provides an interface to scan a single file or an entire project directory.
+	•	Outputs human-readable text reports in the terminal.
+	•	Uses the same backend (AnalyzerService) as the UI for consistency.
+	•	Analyzer Enhancements (analyzer.py)
+	•	Implemented file discovery for single files and directories, returning a ScanResult skeleton with RunInfo.
+	•	Prepares the pipeline for future rule evaluation and parsing.
+	•	Integrated with AnalyzerService.run_scan to support end-to-end scanning from CLI or UI.
+	•	Integration
+	•	Ensured that CLI, UI, and reporting all use the same AnalyzerService backend.
+	•	Enabled the “Download Report” button in the UI to share the same reporting logic as the CLI.
 ## License
 
 Educational use only. Not intended for production security auditing.
