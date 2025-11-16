@@ -5,11 +5,11 @@ import pandas as pd
 import json
 from io import StringIO
 
-# --- Utility Functions for Mocking ---
+# Utility Functions for Mocking
 
 # This mock function simulates generating a detailed report (like a list of findings)
 def generate_mock_report_data():
-    """Generates a mock report list for display."""
+    # Generates a mock report list for display.
     return [
         {"severity": "High", "file": "db_utils.py", "line": 42, "description": "Hardcoded AWS secret key found."},
         {"severity": "Medium", "file": "api_client.py", "line": 105, "description": "Use of MD5 hash function."},
@@ -19,7 +19,7 @@ def generate_mock_report_data():
 
 # This mock function simulates generating a JSON report file content
 def generate_mock_json_report(data):
-    """Generates a mock JSON string for download."""
+    # Generates a mock JSON string for download.
     report = {
         "summary": {
             "High": len([d for d in data if d['severity'] == 'High']),
@@ -30,7 +30,7 @@ def generate_mock_json_report(data):
     }
     return json.dumps(report, indent=4)
 
-# --- Path and Setup ---
+# Path and Setup
 # Set up the Python path to allow imports from the 'scanner' directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 # from scanner.core import scan_file, scan_directory 
 # from scanner.models import VulnerabilityReport
 
-# --- UI Configuration and Setup ---
+# UI Configuration and Setup
 st.set_page_config(
     page_title="Source Code Vulnerability Scanner",
     layout="wide",
@@ -54,13 +54,11 @@ if 'file_name' not in st.session_state:
 if 'scan_just_finished' not in st.session_state:
     st.session_state.scan_just_finished = False
 
-# --- Main Application Logic ---
+# Main Application Logic
 
 def display_report_section(data, file_name):
-    """
-    Displays the vulnerability report summary, detailed findings, 
-    and the download button.
-    """
+    # Displays the vulnerability report summary, detailed findings,
+    # and the download button.
     st.markdown("---")
     st.header(f"✅ Scan Complete for: `{file_name}`")
     
@@ -109,13 +107,11 @@ def display_report_section(data, file_name):
     )
     
 def main_app():
-    """
-    The main function for the Streamlit application.
-    """
+    # The main function for the Streamlit application.
     st.title("🛡️ Python Source Code Vulnerability Scanner")
     st.markdown("---")
 
-    # --- Sidebar for Options ---
+    # Sidebar for Options
     st.sidebar.header("Scan Options")
     
     # Placeholder for configuration options (e.g., language, severity filters)
@@ -146,7 +142,7 @@ def main_app():
         )
         
         if uploaded_file is not None:
-            # --- FIX APPLIED HERE ---
+            # FIX APPLIED HERE
             # If a new file is uploaded (or the user re-uploads the same file), 
             # we reset state and use st.stop() to force a clean re-render
             if st.session_state.file_name != uploaded_file.name or st.session_state.report_data is not None:
@@ -155,7 +151,7 @@ def main_app():
                 st.session_state.scan_just_finished = False
                 # Re-run the script immediately to clear the report and show the clean state
                 st.rerun() 
-            # --- END FIX ---
+            # END FIX
 
             st.success(f"File '{uploaded_file.name}' ready for scanning.")
             # st.code(uploaded_file.read().decode('utf-8')) # Use this to preview content
@@ -163,9 +159,7 @@ def main_app():
             # Check if a scan has already been run for this file
             if st.session_state.report_data is None:
                 if st.button("Start Scan", key="start_single_scan"):
-                    # ----------------------------------------------------
                     # 1. ACTUAL SCANNING LOGIC GOES HERE IN THE FUTURE
-                    # ----------------------------------------------------
                     with st.spinner(f"Scanning {uploaded_file.name}..."):
                         # Simulate work
                         import time; time.sleep(2) 
@@ -174,15 +168,15 @@ def main_app():
                         mock_data = generate_mock_report_data()
                         st.session_state.report_data = mock_data
                         
-                        # --- DEBUG/INSPECTION CODE ---
+                        # DEBUG/INSPECTION CODE
                         st.code(
                             f"Report data generated for inspection:\n{json.dumps(mock_data, indent=2)}",
                             language="json"
                         )
-                        # --- END DEBUG/INSPECTION CODE ---
+                        # END DEBUG/INSPECTION CODE
                         
                         st.session_state.scan_just_finished = True
-                    # ----------------------------------------------------
+                    # END
             
     elif scan_type == "Project Directory":
         # Note: Streamlit file_uploader is limited for directories. 
@@ -190,7 +184,7 @@ def main_app():
         st.info("Please use the 'Single File' option for this prototype.")
         st.text_input("Simulated Directory Path (e.g., /home/user/my_project)")
 
-    # --- Report Display Area (Conditional) ---
+    # Report Display Area (Conditional)
     if st.session_state.report_data is not None:
         # Pass the mock data and file name to the display function
         display_report_section(
