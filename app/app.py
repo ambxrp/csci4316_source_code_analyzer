@@ -142,6 +142,13 @@ def main_app():
         )
         
         if uploaded_file is not None:
+            # Validate that the uploaded file is a Python file
+            if not uploaded_file.name.endswith('.py'):
+                st.error(f"❌ Invalid file type: '{uploaded_file.name}'")
+                st.warning("This analyzer only supports Python source code files (.py)")
+                st.info("Please upload a file with a .py extension.")
+                st.stop()
+            
             # FIX APPLIED HERE
             # If a new file is uploaded (or the user re-uploads the same file), 
             # we reset state and use st.stop() to force a clean re-render
@@ -153,7 +160,7 @@ def main_app():
                 st.rerun() 
             # END FIX
 
-            st.success(f"File '{uploaded_file.name}' ready for scanning.")
+            st.success(f"✅ File '{uploaded_file.name}' ready for scanning.")
             # st.code(uploaded_file.read().decode('utf-8')) # Use this to preview content
             
             # Check if a scan has already been run for this file
