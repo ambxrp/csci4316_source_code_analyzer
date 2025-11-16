@@ -75,10 +75,10 @@ def test_weak_crypto_rule():
     assert len(findings) == 2
     
     assert findings[0].ruleId == "PY-203"
-    assert findings[0].line == 8   # <--- FIX: Was 9, analyzer correctly found 8
+    assert findings[0].line == 8 
     
     assert findings[1].ruleId == "PY-203"
-    assert findings[1].line == 11  # <--- FIX: Was 12, analyzer correctly found 11
+    assert findings[1].line == 11
 
 def test_safe_code_produces_no_findings():
     # Tests that a safe file produces 0 findings (no false positives).
