@@ -2,11 +2,14 @@ import ast
 import uuid
 import datetime
 import re
+import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
 # Import our models
 from .models import Finding, RuleContext, Severity
+
+logger = logging.getLogger(__name__)
 
 # Abstract Base Class (New in Part 3)
 
@@ -52,8 +55,12 @@ class Rule(ABC, ast.NodeVisitor):
     def _create_finding(self, line: int, custom_message: str = "") -> None:
         # Helper to create a new Finding object and add it.
         if not self.context:
-            raise ValueError("RuleContext not set by the engine.")
-            
+            error_msg = f"RuleContext not set by the engine for rule {self.RULE_ID}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        logger.debug(f"Creating finding for {self.RULE_ID} at {self.context.file_path}:{line}")
+        
         finding = Finding(
             id=str(uuid.uuid4()),
             ruleId=self.RULE_ID,
@@ -145,26 +152,72 @@ class InsecureSQLConcatRule(Rule):
         self.generic_visit(node)
 
 class HardcodedCredRule(Rule):
-    # Detects hardcoded credentials in variables.
+    # Detects hardcoded credentials in string literals and suspicious variable assignments.
     RULE_ID = "PY-202"
-    SEVERITY = "Medium"
+    SEVERITY = "High"  # Increased from Medium since hardcoded secrets are critical
     CATEGORY = "Security"
     MESSAGE = "Hardcoded credential detected."
     RECOMMENDATION = "Store credentials in environment variables or a secure vault, not in source code."
 
-    # Simple regex for variable names
-    CRED_VARS = re.compile(r'^(PASSWORD|SECRET|API_KEY|PASSWD|ACCESS_TOKEN)$', re.IGNORECASE)
+    # Patterns for common API key/secret formats in string literals
+    API_KEY_PATTERNS = [
+        # OpenAI keys (sk- followed by optional prefix and long string)
+        re.compile(r'sk-[a-zA-Z0-9\-]{20,}'),
+        # GitHub tokens
+        re.compile(r'gh[pousr]_[a-zA-Z0-9]{36,}'),
+        # AWS Access Key ID
+        re.compile(r'AKIA[0-9A-Z]{16}'),
+        # Generic API keys (long alphanumeric strings that look like secrets)
+        re.compile(r'^[a-zA-Z0-9]{32,}$'),
+        # JWT tokens
+        re.compile(r'eyJ[a-zA-Z0-9_\-]+\.eyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+'),
+    ]
+    
+    # Variable names that suggest credentials (for additional checking)
+    CRED_VARS = re.compile(r'^(PASSWORD|SECRET|API_KEY|PASSWD|ACCESS_TOKEN|PRIVATE_KEY|AUTH_TOKEN)$', re.IGNORECASE)
+
+    def _check_string_for_secrets(self, string_value: str, line_number: int) -> bool:
+        """Check if a string contains potential API keys or secrets."""
+        # Skip short strings and common non-secret patterns
+        if len(string_value) < 20:
+            return False
+        
+        # Skip obvious non-secrets
+        if string_value.lower() in ['your_api_key_here', 'replace_with_your_key', 'todo', 'fixme']:
+            return False
+        
+        # Check against all patterns
+        for pattern in self.API_KEY_PATTERNS:
+            if pattern.search(string_value):
+                self._create_finding(
+                    line=line_number,
+                    custom_message=f"Potential hardcoded API key or secret detected in string literal."
+                )
+                return True
+        return False
+
+    def visit_Constant(self, node: ast.Constant):
+        """Visit all string constants to detect hardcoded secrets."""
+        if isinstance(node.value, str):
+            self._check_string_for_secrets(node.value, node.lineno)
+        self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign):
+        """Check variable assignments with suspicious names."""
         if not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str):
-            # We only care about simple string assignments
             self.generic_visit(node)
             return
 
+        # Check if variable name suggests credentials
         for target in node.targets:
             if isinstance(target, ast.Name) and self.CRED_VARS.match(target.id):
-                self._create_finding(line=node.lineno, 
-                                     custom_message=f"Hardcoded credential found in variable '{target.id}'.")
+                # Only flag if the value looks like a real secret (not placeholder)
+                value = node.value.value
+                if len(value) > 8 and value.lower() not in ['your_api_key_here', 'replace_with_your_key', 'todo', 'fixme']:
+                    self._create_finding(
+                        line=node.lineno,
+                        custom_message=f"Hardcoded credential found in variable '{target.id}'."
+                    )
         self.generic_visit(node)
 
 class WeakCryptoRule(Rule):

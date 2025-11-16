@@ -1,5 +1,8 @@
+import logging
 from collections import Counter
 from .models import ScanResult, Finding, Severity
+
+logger = logging.getLogger(__name__)
 
 class Reporter:
     # Formats a ScanResult into human-readable text.
@@ -7,6 +10,7 @@ class Reporter:
     @staticmethod
     def toText(result: ScanResult) -> str:
         # Generates a complete, human-readable text report.
+        logger.debug("Generating text report")
         findings = result.findings
         run_info = result.runInfo
         

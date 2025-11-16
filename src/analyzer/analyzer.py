@@ -1,5 +1,6 @@
 import datetime
 import ast
+import logging
 from typing import List
 from pathlib import Path
 
@@ -7,7 +8,9 @@ from pathlib import Path
 from .models import Options, ScanResult, RunInfo, RuleContext, Finding
 
 # Import Parser (P2)
-from .parser import PythonParser, SourceFile 
+from .parser import PythonParser, SourceFile
+
+logger = logging.getLogger(__name__) 
 
 # Import Engine and Rules (P3/P4)
 from .engine import RuleEngine
@@ -47,14 +50,24 @@ class Analyzer:
 
     def _analyze_file(self, file_path: Path) -> List[Finding]:
         # Helper to scan a single file.
+        logger.debug(f"Analyzing file: {file_path}")
+        
+        # Validate that the file is a Python file
+        if file_path.suffix != '.py':
+            logger.warning(f"Skipping non-Python file: {file_path}")
+            return []
+        
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except IOError as e:
-            print(f"Error reading file {file_path}: {e}")
+            logger.error(f"IO error reading file {file_path}: {e}")
             return []
         except UnicodeDecodeError as e:
-            print(f"Error decoding file {file_path}: {e}")
+            logger.error(f"Unicode decode error in file {file_path}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error reading file {file_path}: {e}", exc_info=True)
             return []
 
         source_file = SourceFile(path=str(file_path), content=content)
@@ -84,25 +97,26 @@ class Analyzer:
         p = Path(options.path)
 
         if not p.exists():
-            print(f"Error: Path does not exist: {options.path}")
+            logger.error(f"Path does not exist: {options.path}")
             return ScanResult(runInfo=run_info, findings=[])
 
         if p.is_dir():
             # Part 4: Directory scanning
-            print(f"Scanning directory: {p}")
+            logger.info(f"Scanning directory: {p}")
             files_to_scan = list(p.rglob('*.py'))
             run_info.rootPath = str(p.resolve())
-            print(f"Found {len(files_to_scan)} Python files.")
+            logger.info(f"Found {len(files_to_scan)} Python file(s) to scan")
         elif p.is_file():
             # Part 2: Single file scan
-            print(f"Scanning file: {p}")
+            logger.info(f"Scanning single file: {p}")
             files_to_scan = [p]
             run_info.rootPath = str(p.parent.resolve())
         else:
-            print(f"Error: Path is not a file or directory: {p}")
+            logger.error(f"Path is not a file or directory: {p}")
             return ScanResult(runInfo=run_info, findings=[])
 
-        for file_path in files_to_scan:
+        for idx, file_path in enumerate(files_to_scan, 1):
+            logger.debug(f"Processing file {idx}/{len(files_to_scan)}: {file_path}")
             all_findings.extend(self._analyze_file(file_path))
         
         return ScanResult(
