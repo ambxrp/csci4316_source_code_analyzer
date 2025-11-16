@@ -1,46 +1,50 @@
-# part 4
 import argparse
-from services.analyzer_service import AnalyzerService
-from reporting.reporter import Reporter
+import sys
+
+from .models import Options
+from .analyzer import Analyzer
+from .reporter import Reporter
 
 def main():
+    # Main CLI entry point for the scanner.
     parser = argparse.ArgumentParser(
-        description="🔍 Python Source Code Vulnerability Scanner (CLI)"
+        description="Source Code Vulnerability Analyzer"
     )
     parser.add_argument(
-        "--path",
-        required=True,
-        help="Path to a single Python file or a directory to scan"
+        "path", 
+        help="The file or directory path to scan."
     )
-    parser.add_argument(
-        "--format",
-        choices=["text", "json"],
-        default="text",
-        help="Output format for the report (default: text)"
-    )
-    parser.add_argument(
-        "--output",
-        help="Optional path to save the report output"
-    )
-
+    
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+        
     args = parser.parse_args()
-
-    # Create analyzer and scan
-    service = AnalyzerService()
-    scan_result = service.run_scan(args.path)
-
-    # Generate report
-    reporter = Reporter()
-    report = reporter.generate_report(scan_result, output_format=args.format)
-
-    # Output or save report
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(report)
-        print(f"✅ Report saved to {args.output}")
+    
+    # 1. Create Options
+    options = Options(path=args.path)
+    
+    print(f"[CLI] Starting scan on: {options.path}")
+    
+    # 2. Instantiate Analyzer
+    analyzer = Analyzer()
+    
+    # 3. Call analyze
+    result = analyzer.analyze(options)
+    
+    # 4. Call Reporter
+    report_text = Reporter.toText(result)
+    
+    # 5. Print to stdout
+    print("\n" + report_text)
+    
+    if len(result.findings) > 0:
+        print("\n[CLI] Scan complete. Vulnerabilities found.")
+        sys.exit(1) # Exit with error code if findings exist
     else:
-        print(report)
-
+        print("\n[CLI] Scan complete. No vulnerabilities found.")
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()
+    

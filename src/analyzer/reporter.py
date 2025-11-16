@@ -1,47 +1,59 @@
-# part 4
-# app/Reporter.py
-from datetime import datetime
+from collections import Counter
+from .models import ScanResult, Finding, Severity
 
 class Reporter:
-    def toText(self, res, opt):
-        # 1. Count how many findings by severity
-        severity_counts = {"High": 0, "Medium": 0, "Low": 0}
-        for f in res.findings:
-            if f.severity in severity_counts:
-                severity_counts[f.severity] += 1
+    # Formats a ScanResult into human-readable text.
 
-        # 2. Header info for the report
-        lines = [
-            "Source Code Analyzer Report",
-            f"Version: {res.runInfo.toolVersion}",
-            f"Scanned Path: {res.runInfo.rootPath}",
-            f"Timestamp: {res.runInfo.timestamp}",
-            "",
-            f"Summary – High:{severity_counts['High']}  "
-            f"Medium:{severity_counts['Medium']}  "
-            f"Low:{severity_counts['Low']}",
-            "-" * 60,
-        ]
-
-        # 3. Sort findings (High → Medium → Low)
-        sev_order = {"High": 0, "Medium": 1, "Low": 2}
-        sorted_findings = sorted(
-            res.findings,
-            key=lambda f: (sev_order.get(f.severity, 99), f.file, f.line),
+    @staticmethod
+    def toText(result: ScanResult) -> str:
+        # Generates a complete, human-readable text report.
+        findings = result.findings
+        run_info = result.runInfo
+        
+        # Build Summary
+        summary_lines = []
+        summary_lines.append("=== Scan Summary ===")
+        summary_lines.append(f"Path:     {run_info.rootPath}")
+        summary_lines.append(f"Version:  {run_info.toolVersion}")
+        summary_lines.append(f"Time:     {run_info.timestamp}")
+        
+        severity_counts = Counter(f.severity for f in findings)
+        total = len(findings)
+        high = severity_counts.get("High", 0)
+        medium = severity_counts.get("Medium", 0)
+        low = severity_counts.get("Low", 0)
+        
+        summary_lines.append(
+            f"Findings: {total} (High: {high}, Medium: {medium}, Low: {low})"
         )
 
-        # 4. Add each finding’s details
-        for f in sorted_findings:
-            lines += [
-                f"[{f.severity}] {f.ruleId} {f.file}:{f.line}",
-                f"  {f.message}",
-                f"  Recommendation: {f.recommendation}",
-                "",
-            ]
-
-        # 5. If there are no findings
-        if not res.findings:
-            lines.append("No findings detected.")
-
-        # 6. Combine everything into one text string
-        return "\n".join(lines)
+        # Build Detailed Findings
+        detailed_lines = []
+        detailed_lines.append("\n=== Detailed Findings ===")
+        
+        if not findings:
+            detailed_lines.append("No findings.")
+        else:
+            # Sort by severity, then file, then line
+            sorted_findings = sorted(
+                findings, 
+                key=lambda f: (
+                    {"High": 1, "Medium": 2, "Low": 3}.get(f.severity, 4),
+                    f.file,
+                    f.line
+                )
+            )
+            
+            for f in sorted_findings:
+                detailed_lines.append(
+                    f"\n[{f.severity.upper()}] {f.ruleId}: {f.message}"
+                )
+                detailed_lines.append(
+                    f"  -> {f.file}:{f.line}"
+                )
+                detailed_lines.append(
+                    f"  >> {f.recommendation}"
+                )
+        
+        return "\n".join(summary_lines + detailed_lines)
+    
