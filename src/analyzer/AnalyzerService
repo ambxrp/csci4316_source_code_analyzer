@@ -1,0 +1,26 @@
+# new file: src/analyzer/AnalyzerService.py
+
+from .analyzer import Analyzer
+from .reporter import Reporter
+from .models import Options, ScanResult
+
+class AnalyzerService:
+    """
+    Provides a clean interface between the Streamlit UI and the
+    backend analyzer. 
+    """
+    
+    def run_scan(self, options: Options) -> ScanResult:
+        """
+        Runs a full scan.
+        """
+        analyzer = Analyzer()
+        return analyzer.analyze(options) 
+
+    def format_report_text(self, result: ScanResult, options: Options) -> str:
+        """
+        Formats the result into a human-readable string.
+        """
+        # We use your advanced P4 Reporter, not the P2 stub 
+        return Reporter.toText(result)
+    
