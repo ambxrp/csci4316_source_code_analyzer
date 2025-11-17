@@ -3,6 +3,7 @@ import ast
 import logging
 from typing import List
 from pathlib import Path
+from .config import MAX_FILES
 
 # Import models (P1/P3)
 from .models import Options, ScanResult, RunInfo, RuleContext, Finding
@@ -106,6 +107,12 @@ class Analyzer:
             files_to_scan = list(p.rglob('*.py'))
             run_info.rootPath = str(p.resolve())
             logger.info(f"Found {len(files_to_scan)} Python file(s) to scan")
+            
+            if len(files_to_scan) > MAX_FILES: 
+                print(f"Warning: Found {len(files_to_scan)} files. "
+                      f"Capping scan at {MAX_FILES}.")
+                files_to_scan = files_to_scan[:MAX_FILES]
+                
         elif p.is_file():
             # Part 2: Single file scan
             logger.info(f"Scanning single file: {p}")
