@@ -4,72 +4,115 @@ import os
 import pandas as pd
 import json
 from io import StringIO
-
-# Utility Functions for Mocking
-
-# This mock function simulates generating a detailed report (like a list of findings)
-def generate_mock_report_data():
-    # Generates a mock report list for display.
-    return [
-        {"severity": "High", "file": "db_utils.py", "line": 42, "description": "Hardcoded AWS secret key found."},
-        {"severity": "Medium", "file": "api_client.py", "line": 105, "description": "Use of MD5 hash function."},
-        {"severity": "Low", "file": "main.py", "line": 12, "description": "Broad exception handler: except Exception as e."},
-        {"severity": "High", "file": "routes.py", "line": 20, "description": "Insecure SQL query concatenation."}
-    ]
-
-# This mock function simulates generating a JSON report file content
-def generate_mock_json_report(data):
-    # Generates a mock JSON string for download.
-    report = {
-        "summary": {
-            "High": len([d for d in data if d['severity'] == 'High']),
-            "Medium": len([d for d in data if d['severity'] == 'Medium']),
-            "Low": len([d for d in data if d['severity'] == 'Low'])
-        },
-        "findings": data
-    }
-    return json.dumps(report, indent=4)
+from typing import List
+import tempfile
+import shutil
+from collections import Counter
 
 # Path and Setup
-# Set up the Python path to allow imports from the 'scanner' directory
+# Set up the Python path to allow imports from the 'src' directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# We can import placeholders for the logic we will build later
-# from scanner.core import scan_file, scan_directory 
-# from scanner.models import VulnerabilityReport
+# -------------------------------------------------------------------
+# 1. Imports and Backend Initialization (MODIFIED TO USE ANALYZER/REPORTER DIRECTLY)
+# -------------------------------------------------------------------
 
-# UI Configuration and Setup
-st.set_page_config(
-    page_title="Source Code Vulnerability Scanner",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+try:
+    # Import the real data models
+    from src.analyzer.models import Options, Finding, ScanResult
+    # Import Analyzer and Reporter directly, ignoring AnalyzerService
+    from src.analyzer.analyzer import Analyzer
+    from src.analyzer.reporter import Reporter
+    
+    # Instantiate the Analyzer
+    analyzer = Analyzer()
 
-# Initialize session state for report visibility
-if 'report_data' not in st.session_state:
-    st.session_state.report_data = None
-if 'file_name' not in st.session_state:
-    st.session_state.file_name = None
-# State variable to track if a scan just finished and toast is needed
-if 'scan_just_finished' not in st.session_state:
-    st.session_state.scan_just_finished = False
+except ImportError as e:
+    st.error(f"Failed to import backend services: {e}. Check your path setup.")
+    sys.exit(1)
 
-# Main Application Logic
+# -------------------------------------------------------------------
+# 2. Utility Functions
+# -------------------------------------------------------------------
 
-def display_report_section(data, file_name):
-    # Displays the vulnerability report summary, detailed findings,
-    # and the download button.
+# Helper to save Streamlit's UploadedFile object to a temporary disk path.
+# We use st.cache_data to save the file once per upload/hash and return the path.
+@st.cache_data
+def save_uploaded_file_to_temp(uploaded_file, file_name):
+    """Saves the uploaded file to a temporary directory."""
+    # Create a unique temporary directory
+    temp_dir = tempfile.mkdtemp()
+    temp_file_path = os.path.join(temp_dir, file_name)
+    
+    # Write the file content to the temp path
+    with open(temp_file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    # Return the directory path for cleanup, and the file path for the Analyzer
+    return temp_dir, temp_file_path
+
+def cleanup_temp_dir(temp_dir):
+    """Cleans up the temporary directory."""
+    if temp_dir and os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+
+def _findings_to_df(findings: List[Finding]) -> pd.DataFrame:
+    """Converts a list of Finding objects to a DataFrame for display."""
+    if not findings:
+        return pd.DataFrame(columns=["Severity", "Rule ID", "File", "Line", "Message", "Recommendation"])
+    
+    # Sort findings deterministically (High -> Medium -> Low, then by file:line)
+    sorted_findings = sorted(
+        findings, 
+        key=lambda f: (
+            {"High": 1, "Medium": 2, "Low": 3}.get(f.severity, 4),
+            f.file,
+            f.line
+        )
+    )
+    
+    data = [
+        {
+            "Severity": f.severity,
+            "Rule ID": f.ruleId,
+            # Use os.path.basename to keep the file name short for the UI table
+            "File": os.path.basename(f.file), 
+            "Line": f.line,
+            "Message": f.message,
+            "Recommendation": f.recommendation,
+        }
+        for f in sorted_findings
+    ]
+    return pd.DataFrame(data)
+
+def _summarize_findings(findings: List[Finding]) -> dict:
+    """Calculates severity counts from a list of Finding objects."""
+    severity_counts = Counter(f.severity for f in findings)
+    # Ensure all three keys are present for display
+    return {
+        "High": severity_counts.get("High", 0),
+        "Medium": severity_counts.get("Medium", 0),
+        "Low": severity_counts.get("Low", 0)
+    }
+
+# -------------------------------------------------------------------
+# 3. Report Display Function (MODIFIED TO USE REPORTER DIRECTLY)
+# -------------------------------------------------------------------
+
+def display_report_section(result: ScanResult, file_name: str, options: Options):
+    # Uses the actual ScanResult object
     st.markdown("---")
     st.header(f"✅ Scan Complete for: `{file_name}`")
     
+    findings = result.findings
+    
     # 1. Summary Metrics
-    df = pd.DataFrame(data)
-    summary = df.groupby('severity').size().reindex(['High', 'Medium', 'Low'], fill_value=0)
-    total_findings = summary.sum()
+    df = _findings_to_df(findings)
+    summary = _summarize_findings(findings)
+    total_findings = len(findings)
 
     st.subheader(f"Summary: {total_findings} Vulnerabilities Found")
 
-    # Display summary using columns/metrics for visual appeal
     col1, col2, col3 = st.columns(3)
     col1.metric("High Severity", summary.get('High', 0), delta_color="inverse")
     col2.metric("Medium Severity", summary.get('Medium', 0), delta_color="off")
@@ -78,15 +121,13 @@ def display_report_section(data, file_name):
     # 2. Detailed Findings (Preview)
     st.subheader("Detailed Findings Preview")
     
-    # Use st.dataframe for an interactive, sortable table
     st.dataframe(
         df,
-        column_order=("severity", "file", "line", "description"),
+        column_order=("Severity", "Rule ID", "File", "Line", "Message", "Recommendation"),
         hide_index=True,
         use_container_width=True,
-        # Apply color based on severity for better previsualization
         column_config={
-            "severity": st.column_config.Column(
+            "Severity": st.column_config.Column(
                 "Severity",
                 help="The potential security impact.",
                 width="small",
@@ -95,29 +136,52 @@ def display_report_section(data, file_name):
     )
 
     # 3. Download Button
-    json_report_content = generate_mock_json_report(data)
-    
     st.markdown("### Export Report")
+    
+    # Generate the text report using the real Reporter class
+    # NOTE: The Reporter.toText function in src/analyzer/reporter.py only accepts the result object.
+    text_report_content = Reporter.toText(result)
+    
     st.download_button(
-        label="⬇️ Download JSON Report",
-        data=json_report_content,
-        file_name=f"vulnerability_report_{file_name.replace('.', '_')}.json",
-        mime="application/json",
-        key='download_json'
+        label="⬇️ Download Text Report",
+        data=text_report_content,
+        file_name=f"vulnerability_report_{file_name.replace('.', '_')}.txt",
+        mime="text/plain",
+        key='download_text'
     )
     
+# -------------------------------------------------------------------
+# 4. Main Application Logic (MODIFIED TO USE ANALYZER DIRECTLY)
+# -------------------------------------------------------------------
+
 def main_app():
-    # The main function for the Streamlit application.
     st.title("🛡️ Python Source Code Vulnerability Scanner")
     st.markdown("---")
 
-    # Sidebar for Options
+    # Initialize state variables to hold the scan results and file path
+    if 'result' not in st.session_state: 
+        st.session_state.result = None
+    if 'file_name' not in st.session_state: 
+        st.session_state.file_name = None
+    if 'file_path' not in st.session_state: 
+        st.session_state.file_path = None
+    if 'temp_dir' not in st.session_state: 
+        st.session_state.temp_dir = None
+    if 'options' not in st.session_state: 
+        st.session_state.options = None
+    if 'scan_just_finished' not in st.session_state:
+        st.session_state.scan_just_finished = False
+
+    # Sidebar for Options (Kept as placeholder per requirements)
     st.sidebar.header("Scan Options")
-    
-    # Placeholder for configuration options (e.g., language, severity filters)
     language = st.sidebar.selectbox("Target Language", ["Python (Default)"], index=0)
     
-    # Placeholder for the main action area
+    # Placeholder for rule configuration (Future Part)
+    st.sidebar.subheader("Ruleset Configuration (Placeholder)")
+    rules_enabled = [] 
+    severity_threshold = "Low" 
+
+    # Main action area
     st.header("Upload File or Directory")
 
     scan_type = st.radio(
@@ -127,14 +191,7 @@ def main_app():
         horizontal=True
     )
     
-    # Reset report data when switching scan type
-    if st.session_state.report_data is not None and scan_type == "Project Directory":
-        # We only reset here if the user switches the main scan_type radio button
-        st.session_state.report_data = None
-        st.session_state.file_name = None
-        st.session_state.scan_just_finished = False
-
-
+    # Logic for Single File
     if scan_type == "Single File":
         uploaded_file = st.file_uploader(
             "Upload a Python file (`.py`) to scan", 
@@ -142,67 +199,77 @@ def main_app():
         )
         
         if uploaded_file is not None:
-            # Validate that the uploaded file is a Python file
+            # 1. Validation
             if not uploaded_file.name.endswith('.py'):
                 st.error(f"❌ Invalid file type: '{uploaded_file.name}'")
-                st.warning("This analyzer only supports Python source code files (.py)")
-                st.info("Please upload a file with a .py extension.")
+                st.info("This analyzer only supports Python source code files (.py)")
                 st.stop()
             
-            # FIX APPLIED HERE
-            # If a new file is uploaded (or the user re-uploads the same file), 
-            # we reset state and use st.stop() to force a clean re-render
-            if st.session_state.file_name != uploaded_file.name or st.session_state.report_data is not None:
+            # 2. File State Management
+            if st.session_state.file_name != uploaded_file.name:
+                
+                # Cleanup previous temp dir
+                if st.session_state.temp_dir:
+                    cleanup_temp_dir(st.session_state.temp_dir)
+                    
+                # Save the new file and update state
+                temp_dir, temp_file_path = save_uploaded_file_to_temp(uploaded_file, uploaded_file.name)
+                
+                st.session_state.temp_dir = temp_dir
+                st.session_state.file_path = temp_file_path
                 st.session_state.file_name = uploaded_file.name
-                st.session_state.report_data = None
+                st.session_state.result = None # Clear old results
                 st.session_state.scan_just_finished = False
-                # Re-run the script immediately to clear the report and show the clean state
-                st.rerun() 
-            # END FIX
-
-            st.success(f"✅ File '{uploaded_file.name}' ready for scanning.")
-            # st.code(uploaded_file.read().decode('utf-8')) # Use this to preview content
+                st.session_state.options = None
             
-            # Check if a scan has already been run for this file
-            if st.session_state.report_data is None:
+            st.success(f"✅ File '{st.session_state.file_name}' ready for scanning.")
+            
+            # 3. Scan Trigger (Calls Analyzer directly)
+            if st.session_state.result is None:
                 if st.button("Start Scan", key="start_single_scan"):
-                    # 1. ACTUAL SCANNING LOGIC GOES HERE IN THE FUTURE
-                    with st.spinner(f"Scanning {uploaded_file.name}..."):
-                        # Simulate work
-                        import time; time.sleep(2) 
+                    
+                    with st.spinner(f"Scanning {st.session_state.file_name}..."):
                         
-                        # Generate the mock report data and store it in state
-                        mock_data = generate_mock_report_data()
-                        st.session_state.report_data = mock_data
-                        
-                        # DEBUG/INSPECTION CODE
-                        st.code(
-                            f"Report data generated for inspection:\n{json.dumps(mock_data, indent=2)}",
-                            language="json"
+                        # Create the Options object
+                        scan_options = Options(
+                            path=st.session_state.file_path,
+                            outputFormat="text", 
+                            rulesEnabled=rules_enabled,
+                            severityThreshold=severity_threshold
                         )
-                        # END DEBUG/INSPECTION CODE
+                        st.session_state.options = scan_options
                         
+                        try:
+                            # Call the real Analyzer directly
+                            result = analyzer.analyze(scan_options)
+                            st.session_state.result = result
+                            
+                        except Exception as e:
+                            st.error(f"An unexpected error occurred during scan.")
+                            st.exception(e)
+                            st.session_state.result = None
+                            
                         st.session_state.scan_just_finished = True
-                    # END
-            
+                    
+                    st.rerun() 
+
     elif scan_type == "Project Directory":
-        # Note: Streamlit file_uploader is limited for directories. 
-        st.warning("Directory scanning functionality requires a local setup or zip upload for web apps.")
+        st.warning("Directory scanning is implemented in the backend but is not supported by the Streamlit file uploader in this web prototype.")
         st.info("Please use the 'Single File' option for this prototype.")
         st.text_input("Simulated Directory Path (e.g., /home/user/my_project)")
 
+
     # Report Display Area (Conditional)
-    if st.session_state.report_data is not None:
-        # Pass the mock data and file name to the display function
+    if st.session_state.result is not None:
         display_report_section(
-            st.session_state.report_data, 
-            st.session_state.file_name
+            st.session_state.result, 
+            st.session_state.file_name,
+            st.session_state.options
         )
         
-        # Display the toast message ONLY after the rerun has completed and the report is shown
         if st.session_state.scan_just_finished:
             st.toast("Scan complete! Report generated.")
-            st.session_state.scan_just_finished = False # Reset the flag
+            st.session_state.scan_just_finished = False
 
 
 # Run the application
