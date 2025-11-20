@@ -135,19 +135,30 @@ def display_report_section(result: ScanResult, file_name: str, options: Options)
         },
     )
 
-    # 3. Download Button
+    # 3. Download Buttons (Text and JSON)
     st.markdown("### Export Report")
     
-    # Generate the text report using the real Reporter class
-    # NOTE: The Reporter.toText function in src/analyzer/reporter.py only accepts the result object.
-    text_report_content = Reporter.toText(result)
+    col_dl_1, col_dl_2 = st.columns(2)
     
-    st.download_button(
+    # --- Text Report Download (Existing) ---
+    text_report_content = Reporter.toText(result)
+    col_dl_1.download_button(
         label="⬇️ Download Text Report",
         data=text_report_content,
         file_name=f"vulnerability_report_{file_name.replace('.', '_')}.txt",
         mime="text/plain",
         key='download_text'
+    )
+    
+    # --- JSON Report Download (New) ---
+    # Call the new Reporter.toJSON method
+    json_report_content = Reporter.toJSON(result) 
+    col_dl_2.download_button(
+        label="⬇️ Download JSON Report",
+        data=json_report_content,
+        file_name=f"vulnerability_report_{file_name.replace('.', '_')}.json",
+        mime="application/json",
+        key='download_json'
     )
     
 # -------------------------------------------------------------------
