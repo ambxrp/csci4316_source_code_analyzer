@@ -1,6 +1,8 @@
 import logging
 from collections import Counter
 from .models import ScanResult, Finding, Severity
+import json
+from dataclasses import asdict
 
 logger = logging.getLogger(__name__)
 
@@ -61,3 +63,28 @@ class Reporter:
         
         return "\n".join(summary_lines + detailed_lines)
     
+    @staticmethod
+    def toJSON(result: ScanResult) -> str:
+        """
+        Generates a complete JSON report by serializing the ScanResult object.
+        """
+        logger.debug("Generating JSON report")
+        
+        # Convert the ScanResult dataclass instance (which contains nested dataclasses)
+        # into a serializable dictionary structure.
+        report_dict = asdict(result)
+        
+        # Calculate summary counts for the summary section
+        findings = result.findings
+        severity_counts = Counter(f.severity for f in findings)
+        
+        # Add a summary section to the root of the JSON for convenience
+        report_dict['summary'] = {
+            "Total": len(findings),
+            "High": severity_counts.get("High", 0),
+            "Medium": severity_counts.get("Medium", 0),
+            "Low": severity_counts.get("Low", 0)
+        }
+        
+        # Return the pretty-printed JSON string
+        return json.dumps(report_dict, indent=4)
